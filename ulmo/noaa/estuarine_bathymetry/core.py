@@ -4,7 +4,7 @@
     ulmo.noaa.estuarine_bathymetry.core
     ~~~~~~~~~~~~~~~~~~~~~
 
-    This module provides access to data provided by the `NOAA Estuaring Bathymetry
+    This module provides access to data provided by the `NOAA Estuarine Bathymetry
     Data Sets`_ web site.
 
 Created on Mon Feb 02 15:00:04 2015
@@ -16,7 +16,6 @@ Created on Mon Feb 02 15:00:04 2015
 from bs4 import BeautifulSoup
 from geojson import Feature, FeatureCollection
 from ulmo import util
-import fiona
 import logging
 import os
 import requests
@@ -147,7 +146,11 @@ def _read_shape_zipfile(estuary_id, zip_path):
         This parameter represents the desired location where the downloaded estuarine shape file
         data archive is on the local machine.    
         
-    """    
+    """
+    try:
+        import fiona
+    except ImportError:
+        print 'The NOAA Estuarine Bathymetry Service requires the fiona package'
     
     with fiona.open('/', vfs='zip://%s' % zip_path) as c:
          f = next(c)
