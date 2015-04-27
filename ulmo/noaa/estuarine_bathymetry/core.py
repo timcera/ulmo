@@ -19,11 +19,13 @@ from ulmo import util
 import logging
 import os
 import requests
-import ulmo
 import zipfile
 
 NOAA_BATHYMETRY_BASE_URL = 'http://estuarinebathymetry.noaa.gov/%s'
 NOAA_BATHYMETRY_DATA_URL = 'http://estuarinebathymetry.noaa.gov/finddata.html'
+
+# default file path (appended to default ulmo path)
+DEFAULT_FILE_PATH = 'noaa/estuarine_bathymetry/'
 
 dem_format_dict = {
         '1 arc-second': '_B30.zip',
@@ -37,47 +39,44 @@ log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
 
-def get_data_locations(path):
-  
-     """
-     This function retrieves locations that has estuarine bathymetry data.  Each estuary has an associated 
-     shapefile acrhive that will be used to show the data locations.  Each estuarine shapefile archive is 
-     downloaded to determine the data locations.
+def get_data_locations(path=None):
+    """
+    This function retrieves locations that has estuarine bathymetry data.  Each estuary has an associated 
+    shapefile acrhive that will be used to show the data locations.  Each estuarine shapefile archive is 
+    downloaded to determine the data locations.
 
-     Parameters
-     ----------
-     path : str, 
+    Parameters
+    ----------
+    path : ``None`` or str, 
         This parameter represents the path on a local machine to store the downloaded the estuarine shapefile
-        archives.
-     """
+        archives. If ``None`` default path will be used.
+    """
     
-     url_region_dict = _fetch_region_url()
-    
-     bathymetry_estuary_list = []      
-     features = []
- 
-     if (os.path.exists(path)): 
-   
-         for regionKey in url_region_dict:
-             url = NOAA_BATHYMETRY_BASE_URL % url_region_dict[regionKey]
-             temp_estuary_list = _fetch_url(url, regionKey)
-             count = 0
-             for estuary in temp_estuary_list:
-                 bathymetry_estuary_list.append(estuary)
-                 count+=1
-                 #print estuary['text'], estuary['zip_url'] #estuary['href'], estuary['region'], estuary['id']
-                 print '... downloading %s estuary shapefile archive %s of %s from %s' % (estuary['region'], count, len(temp_estuary_list), estuary['zip_url'])
+    if path is None:
+        path = os.path.join(util.get_ulmo_dir(), DEFAULT_FILE_PATH)
 
-                 # retrieve zip file name portion from the zip file url
-                 filename = os.path.split(estuary['zip_url'])[-1]  
-                
-                 zip_path = os.path.join(path, 'zip', filename)
-                 
-                 # download zip archive from the NOAA estuarine bathymetry site
-                 util.misc.download_if_new(estuary['zip_url'], zip_path, check_modified=True)    
-                 
-         count = 0  
-         for estuary in bathymetry_estuary_list:
+    util.mkdir_if_doesnt_exist(path)
+    url_region_dict = _fetch_region_url()
+    bathymetry_estuary_list = []      
+    features = []
+    for regionKey in url_region_dict:
+        url = NOAA_BATHYMETRY_BASE_URL % url_region_dict[regionKey]
+        temp_estuary_list = _fetch_url(url, regionKey)
+        count = 0
+        for estuary in temp_estuary_list:
+            bathymetry_estuary_list.append(estuary)
+            count+=1
+            #print estuary['text'], estuary['zip_url'] #estuary['href'], estuary['region'], estuary['id']
+            print '... downloading %s estuary shapefile archive %s of %s from %s' % (estuary['region'], count, len(temp_estuary_list), estuary['zip_url'])
+
+            # retrieve zip file name portion from the zip file url
+            filename = os.path.split(estuary['zip_url'])[-1]  
+            zip_path = os.path.join(path, 'zip', filename)
+            # download zip archive from the NOAA estuarine bathymetry site
+            util.misc.download_if_new(estuary['zip_url'], zip_path, check_modified=True)    
+             
+        count = 0  
+        for estuary in bathymetry_estuary_list:
             count+=1
             # check to see if the zip path is a valid file format
             # if the zip path is valid, read the shape file from the zip archive
@@ -88,52 +87,43 @@ def get_data_locations(path):
             else:
                 print '%s is not a valid zip file!' % zip_path
   
-     else:
-         print '%s does not exist' % path  
-  
-     return FeatureCollection(features)
+    return FeatureCollection(features)
     
-def get_data(estuary_id, path, dem_format):  
-    
+
+def get_data(estuary_id, dem_format, path=None):  
     """
-     This function retrieves estuarine bathymetry data.  Each estuary has an archived bathymetry
-     data in the following formats: 1 arc-second dem format or 3 arc-second dem format.  The term
-     dem stands for Digital Elevation Model.
+    This function retrieves estuarine bathymetry data.  Each estuary has an archived bathymetry
+    data in the following formats: 1 arc-second dem format or 3 arc-second dem format.  The term
+    dem stands for Digital Elevation Model.
 
-     Parameters
-     ----------
-     estuary_id : str, 
-        This parameter represents the id of the estuary.
+    Parameters
+    ----------
+    estuary_id : str, 
+    This parameter represents the id of the estuary.
 
-     dem_format : str,
-        This parameter represents the desired type of dem data archive to download (1 arc-second or 3 arc-second)     
-        
-     """
+    dem_format : str,
+    This parameter represents the desired type of dem data archive to download (1 arc-second or 3 arc-second)
+    """
+    if path is None:
+        path = os.path.join(util.get_ulmo_dir(), DEFAULT_FILE_PATH)
 
-    if (os.path.exists(path)):   
-       
-       if (dem_format in dem_format_dict.keys()):
-        
-           dem_format_value = dem_format_dict.get(dem_format)
-           zip_url = estuary_id + '/' + estuary_id + dem_format_value
-     
-           dem_zip_url = NOAA_BATHYMETRY_BASE_URL % zip_url
-           
-           # retrieve zip file name portion from the zip file url
-           filename = os.path.split(dem_zip_url)[-1]  
-          
-           zip_path = os.path.join(path, 'zip_dem', filename)
-           
-           util.misc.download_if_new(dem_zip_url, zip_path, check_modified=True)
+    util.mkdir_if_doesnt_exist(path)
+    if (dem_format in dem_format_dict.keys()):
+        dem_format_value = dem_format_dict.get(dem_format)
+        zip_url = estuary_id + '/' + estuary_id + dem_format_value
+        dem_zip_url = NOAA_BATHYMETRY_BASE_URL % zip_url
 
-       else:
-           print 'The following dem formats are supported 1 arc-second or 3 arc-second, not %s' % dem_format
-     
+        # retrieve zip file name portion from the zip file url
+        filename = os.path.split(dem_zip_url)[-1]  
+        zip_path = os.path.join(path, 'zip_dem', filename)
+        util.misc.download_if_new(dem_zip_url, zip_path, check_modified=True)
     else:
-        print 'The following path does not exist: %s' % path        
-     
+        print 'The following dem formats are supported 1 arc-second or 3 arc-second, not %s' % dem_format    
+
+    return 
+
+
 def _read_shape_zipfile(estuary_id, zip_path):
-    
     """
      This function uses the Fiona module to read estuarine bathymetry data shapefile archives.  
 
@@ -150,7 +140,7 @@ def _read_shape_zipfile(estuary_id, zip_path):
     try:
         import fiona
     except ImportError:
-        print 'The NOAA Estuarine Bathymetry Service requires the fiona package'
+        raise ImportError('The NOAA Estuarine Bathymetry Service requires the fiona package')
     
     with fiona.open('/', vfs='zip://%s' % zip_path) as c:
          f = next(c)
@@ -162,8 +152,8 @@ def _read_shape_zipfile(estuary_id, zip_path):
         
     return feature      
     
+
 def _fetch_url(url, region):
-    
     """
     This function uses the Beautiful Soup module to parse the estuaries info (name, url link page) 
     from a particular region that NOAA has screated.
@@ -210,8 +200,8 @@ def _fetch_url(url, region):
      
     return bathymetry_estuaries
 
-def _fetch_region_url():
-    
+
+def _fetch_region_url():    
     """
     This function uses the Beautiful Soup module to parse the regional estuaries info (name, url link page) 
     from a particular region that NOAA has created.
