@@ -23,6 +23,24 @@ CUAHSI WaterOneFlow
    :members: get_sites, get_site_info, get_values, get_variable_info
 
 
+Lower Colorado River Authority (LCRA) Hydromet Data
+===================================================
+.. automodule:: ulmo.lcra.hydromet
+   :members: get_sites_by_type, get_site_data, get_all_sites, get_current_data
+
+
+Lower Colorado River Authority (LCRA) Water Quality Data
+========================================================
+.. automodule:: ulmo.lcra.waterquality
+   :members: get_sites, get_historical_data, get_recent_data, get_site_info
+
+
+NASA ORNL Daymet weather data services
+========================================================
+.. automodule:: ulmo.nasa.daymet
+   :members: get_variables, get_daymet_singlepixel
+   
+
 National Climatic Data Center Climate Index Reference Sequential (CIRS)
 =======================================================================
 .. automodule:: ulmo.ncdc.cirs
@@ -78,7 +96,7 @@ USGS National Elevation Dataset (NED) services
 ========================================================
 .. automodule:: ulmo.usgs.ned
    :members: get_available_layers, get_raster, get_raster_availability
-   
+
 
 .. _dates-and-times:
 

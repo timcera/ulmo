@@ -9,8 +9,12 @@
     .. _USGS National Water Information System: http://waterdata.usgs.gov/nwis
 
 """
+from future import standard_library
+standard_library.install_aliases()
+from builtins import str
+from past.builtins import basestring
 import contextlib
-import cStringIO as StringIO
+import io
 import datetime
 import logging
 
@@ -105,7 +109,7 @@ def get_sites(sites=None, state_code=None, huc=None, bounding_box=None,
                 )
             raise ValueError(error_msg)  
 
-        if len(filter(None, major_filters)) > 1:
+        if len([_f for _f in major_filters if _f]) > 1:
             error_msg = (
                     '*Only one* of the following major filters can be supplied:'
                     'sites, state_code, huc, bounding_box, country_code.'
@@ -151,14 +155,14 @@ def get_sites(sites=None, state_code=None, huc=None, bounding_box=None,
         req = requests.get(url, params=url_params)
         log.info("processing data from request: %s" % req.request.url)
         req.raise_for_status()        
-        input_file = StringIO.StringIO(str(req.content))
+        input_file = io.BytesIO(util.to_bytes(req.content))
 
     with _open_input_file(input_file) as content_io:
         return_sites = wml.parse_site_infos(content_io)
 
     return_sites = dict([
         (code, _extract_site_properties(site))
-        for code, site in return_sites.iteritems()
+        for code, site in return_sites.items()
     ])
 
     return return_sites
@@ -166,7 +170,7 @@ def get_sites(sites=None, state_code=None, huc=None, bounding_box=None,
 
 def get_site_data(site_code, service=None, parameter_code=None, statistic_code=None,
         start=None, end=None, period=None, modified_since=None, input_file=None,
-        **kwargs):
+        methods=None, **kwargs):
     """Fetches site data.
 
 
@@ -202,6 +206,13 @@ def get_site_data(site_code, service=None, parameter_code=None, statistic_code=N
         If ``None`` (default), then the NWIS web services will be queried, but
         if a file is passed then this file will be used instead of requesting
         data from the NWIS web services.
+    methods: ``None``, str or Python dict
+        If ``None`` (default), it's assumed that there is a single method for
+        each parameter. This raises an error if more than one method ids are
+        encountered. If str, this is the method id for the requested
+        parameter/s and can use "all" if method ids are not known beforehand. If
+        dict, provide the parameter_code to method id mapping. Parameter's
+        method id is specific to site.
 
 
     Returns
@@ -246,11 +257,12 @@ def get_site_data(site_code, service=None, parameter_code=None, statistic_code=N
 
     if service is not None:
         url_params.update(kwargs)
-        values = _get_site_values(service, url_params, input_file=input_file)
+        values = _get_site_values(service, url_params, input_file=input_file,
+                                  methods=methods)
     else:
         kw = dict(parameter_code=parameter_code, statistic_code=statistic_code,
                 start=start, end=end, period=period, modified_since=modified_since,
-                input_file=input_file)
+                input_file=input_file, methods=methods)
         kw.update(kwargs)
         values = get_site_data(site_code, service='daily', **kw)
         values.update(
@@ -299,7 +311,7 @@ def _get_service_url(service):
                 "'instantaneous' ('iv')")
 
 
-def _get_site_values(service, url_params, input_file=None):
+def _get_site_values(service, url_params, input_file=None, methods=None):
     """downloads and parses values for a site
 
     returns a values dict containing variable and data values
@@ -317,14 +329,15 @@ def _get_site_values(service, url_params, input_file=None):
 
         if req.status_code != 200:
             return {}
-        input_file = StringIO.StringIO(str(req.content))
+        input_file = io.BytesIO(util.to_bytes(req.content))
     else:
         query_isodate = None
 
     with _open_input_file(input_file) as content_io:
-        data_dict = wml.parse_site_values(content_io, query_isodate)
+        data_dict = wml.parse_site_values(content_io, query_isodate,
+            methods=methods)
 
-        for variable_dict in data_dict.values():
+        for variable_dict in list(data_dict.values()):
             variable_dict['site'] = _extract_site_properties(variable_dict['site'])
 
     return data_dict

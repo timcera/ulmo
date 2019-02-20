@@ -20,6 +20,7 @@
     .. _http://eddn.usgs.gov/dcpformat.html
 
 """
+from past.builtins import basestring
 
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
@@ -72,6 +73,7 @@ def decode(dataframe, parser, **kwargs):
     df = []
     for timestamp, data in dataframe.iterrows():
         parsed = parser(data, **kwargs)
+        parsed.dropna(how='all', inplace=True)
         if not parsed.empty:
             df.append(parsed)
 
@@ -191,13 +193,19 @@ def get_data(
     if not new_data.empty:
         new_data.index = new_data.message_timestamp_utc
         data = new_data.combine_first(data)
-        data.sort(inplace=True)
+        data.sort_index(inplace=True)
 
         if use_cache:
             #write to a tmp file and move to avoid ballooning h5 file
             tmp = dcp_data_path + '.tmp'
             data.to_hdf(tmp, dcp_address)
             shutil.move(tmp, dcp_data_path)
+
+    if data.empty:
+        if as_dataframe:
+            return data
+        else:
+            return {}
 
     if start:
         if start.startswith('P'):
@@ -221,7 +229,7 @@ def _fetch_url(params):
     r = requests.get(EDDN_URL, params=params)
     log.info('data requested using url: %s\n' % r.url)
     soup = BeautifulSoup(r.text)
-    message = soup.find('pre').contents[0].strip('\n')
+    message = soup.find('pre').contents[0].replace('\n', '').replace('\r', ' ')
 
     data_limit_reached = False
     if 'Max data limit reached' in message:

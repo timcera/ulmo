@@ -17,6 +17,7 @@ import pandas
 
 from ulmo import util
 
+CSV_SWITCHOVER = pandas.Timestamp('2016-10-01')
 
 def get_data(county=None, start=None, end=None, as_dataframe=False, data_dir=None):
     """Retreives data.
@@ -62,7 +63,7 @@ def get_data(county=None, start=None, end=None, as_dataframe=False, data_dir=Non
     if data_dir is None:
         data_dir = os.path.join(util.get_ulmo_dir(), 'twc/kbdi')
 
-    df = pandas.tools.merge.concat([
+    df = pandas.concat([
         _date_dataframe(date, data_dir)
         for date in pandas.period_range(start_date, end_date, freq='D')
     ], ignore_index=True)
@@ -92,9 +93,15 @@ def _as_data_dict(df):
 
 
 def _date_dataframe(date, data_dir):
-    url = _get_data_url(date)
-    with _open_data_file(url, data_dir) as data_file:
-        date_df = _parse_data_file(data_file)
+
+    if date.to_timestamp() < CSV_SWITCHOVER:
+        url = _get_text_url(date)
+        with _open_data_file(url, data_dir) as data_file:
+            date_df = _parse_text_file(data_file)
+    else:
+        url = _get_csv_url(date)
+        with _open_data_file(url, data_dir) as data_file:
+            date_df = _parse_csv_file(data_file)
 
     date_df['date'] = pandas.Period(date, freq='D')
 
@@ -368,11 +375,13 @@ def _fips_dataframe():
     return df
 
 
-def _get_data_url(date):
+def _get_text_url(date):
     return 'http://twc.tamu.edu/weather_images/summ/summ%s.txt' % date.strftime('%Y%m%d')
 
+def _get_csv_url(date):
+    return 'http://twc.tamu.edu/weather_images/summ/summ%s.csv' % date.strftime('%Y%m%d')
 
-def _parse_data_file(data_file):
+def _parse_text_file(data_file):
     """
     example:
         COUNTY                        KBDI_AVG   KBDI_MAX    KBDI_MIN
@@ -383,11 +392,15 @@ def _parse_data_file(data_file):
     """
 
     dtype = [
-        ('county', '|S15'),
+        ('county', '|U15'),
         ('avg', 'i4'),
         ('max', 'i4'),
         ('min', 'i4'),
     ]
+
+    if not data_file.readline().lower().startswith(b'county'):
+        return pandas.DataFrame()
+    data_file.seek(0)
 
     data_array = np.genfromtxt(
         data_file, delimiter=[31, 11, 11, 11], dtype=dtype, skip_header=2,
@@ -395,6 +408,25 @@ def _parse_data_file(data_file):
     dataframe = pandas.DataFrame(data_array)
     return dataframe
 
+def _parse_csv_file(data_file):
+    """
+    example:
+        County,Min,Max,Average,Change
+        Anderson,429,684,559,+5
+        Andrews,92,356,168,+7
+    """
+
+    if not data_file.readline().lower().startswith(b'county'):
+        return pandas.DataFrame()
+    data_file.seek(0)
+
+    dataframe = pandas.read_csv(data_file)
+    dataframe.columns = dataframe.columns.str.lower()
+    dataframe = dataframe.rename(columns={'average':'avg'})
+    dataframe.county = dataframe.county.str.upper()
+    dataframe = dataframe[['county','avg','max','min']]
+
+    return dataframe
 
 def _open_data_file(url, data_dir):
     """returns an open file handle for a data file; downloading if necessary or
@@ -402,4 +434,4 @@ def _open_data_file(url, data_dir):
     """
     file_name = url.rsplit('/', 1)[-1]
     file_path = os.path.join(data_dir, file_name)
-    return util.open_file_for_url(url, file_path, check_modified=True)
+    return util.open_file_for_url(url, file_path, check_modified=True, use_bytes=True)

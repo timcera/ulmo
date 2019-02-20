@@ -1,3 +1,6 @@
+from builtins import map
+from builtins import zip
+from past.builtins import basestring
 import contextlib
 import copy
 from datetime import datetime
@@ -123,7 +126,7 @@ def get_site(site_code, path=None, complevel=None, complib=None):
 
 
 def get_site_data(site_code, agency_code=None, parameter_code=None, path=None,
-                  complevel=None, complib=None):
+                  complevel=None, complib=None, start=None):
     """Fetches previously-cached site data from an hdf5 file.
 
     Parameters
@@ -151,6 +154,8 @@ def get_site_data(site_code, agency_code=None, parameter_code=None, path=None,
         the best available compression library available on your system will be
         selected. If complevel argument is set to 0 then no compression will be
         used.
+    start: ``None`` or string formatted date like 2014-01-01
+        Filter the dataset to return only data later that the start date
 
 
     Returns
@@ -170,14 +175,14 @@ def get_site_data(site_code, agency_code=None, parameter_code=None, path=None,
         if parameter_code:
             site_data = dict([
                 (variable_group._v_pathname.rsplit('/', 1)[-1],
-                 _variable_group_to_dict(store, variable_group))
+                 _variable_group_to_dict(store, variable_group, start=start))
                 for variable_group in site_group
                 if variable_group._v_pathname.rsplit('/', 1)[-1] in parameter_code
             ])
         else:
             site_data = dict([
                 (variable_group._v_pathname.rsplit('/', 1)[-1],
-                 _variable_group_to_dict(store, variable_group))
+                 _variable_group_to_dict(store, variable_group, start=start))
                 for variable_group in site_group
             ])
     return site_data
@@ -211,7 +216,7 @@ def remove_values(site_code, datetime_dicts, path=None, complevel=None, complib=
             (site_code, site_data_path))
             return
 
-        for variable_code, datetimes in datetime_dicts.iteritems():
+        for variable_code, datetimes in datetime_dicts.items():
             variable_group_path = site_code + '/' + variable_code
             values_path = variable_group_path + '/' + 'values'
 
@@ -268,10 +273,9 @@ def repack(path, complevel=None, complib=None):
     """
     comp_kwargs = _compression_kwargs(complevel=complevel, complib=complib)
 
-    with tempfile.NamedTemporaryFile() as temp_f:
-        temp_path = temp_f.name
-        _ptrepack(path, temp_path, **comp_kwargs)
-        shutil.copyfile(temp_path, path)
+    temp_path = tempfile.NamedTemporaryFile().name
+    _ptrepack(path, temp_path, **comp_kwargs)
+    shutil.move(temp_path, path)
 
 
 def update_site_list(sites=None, state_code=None, huc=None, bounding_box=None, 
@@ -333,7 +337,8 @@ def update_site_list(sites=None, state_code=None, huc=None, bounding_box=None,
 
 
 def update_site_data(site_code, start=None, end=None, period=None, path=None,
-        input_file=None, complevel=None, complib=None, autorepack=True):
+        methods=None, input_file=None, complevel=None, complib=None,
+        autorepack=True):
     """Update cached site data.
 
     Parameters
@@ -357,6 +362,13 @@ def update_site_data(site_code, start=None, end=None, period=None, path=None,
         Path to the hdf5 file to be queried, if ``None`` then the default path
         will be used. If a file path is a directory, then multiple hdf5 files
         will be kept so that file sizes remain small for faster repacking.
+    methods: ``None``, str or Python dict
+        If ``None`` (default), it's assumed that there is a single method for
+        each parameter. This raises an error if more than one method ids are
+        encountered. If str, this is the method id for the requested
+        parameter/s and can use "all" if method ids are not known beforehand. If
+        dict, provide the parameter_code to method id mapping. Parameter's
+        method id is specific to site.
     input_file: ``None``, file path or file object
         If ``None`` (default), then the NWIS web services will be queried, but
         if a file is passed then this file will be used instead of requesting
@@ -384,13 +396,16 @@ def update_site_data(site_code, start=None, end=None, period=None, path=None,
             start = prior_last_refresh
 
     new_site_data = core.get_site_data(site_code, start=start, end=end,
-            period=period, input_file=input_file)
+            period=period, input_file=input_file, methods=methods)
+    if not len(new_site_data):
+        core.log.info("No new data was found")
+        return None
 
     comp_kwargs = _compression_kwargs(complevel=complevel, complib=complib)
 
     something_changed = False
     with _get_store(site_data_path, mode='a', **comp_kwargs) as store:
-        for variable_code, data_dict in new_site_data.iteritems():
+        for variable_code, data_dict in new_site_data.items():
             variable_group_path = site_code + '/' + variable_code
 
             site_dict = data_dict.pop('site')
@@ -424,7 +439,7 @@ def update_site_data(site_code, start=None, end=None, period=None, path=None,
             something_changed = True
 
             variable_group = store.get_node(variable_group_path)
-            for key, value in data_dict.iteritems():
+            for key, value in data_dict.items():
                 setattr(variable_group._v_attrs, key, value)
 
         site_group = store.get_node(site_code)
@@ -515,9 +530,9 @@ def _nest_dataframe_dicts(unnested_df, nested_column, keys):
     df = _nans_to_none(df)
 
     def _nest_func(row):
-        return dict(zip(keys, row))
+        return dict(list(zip(keys, row)))
 
-    nested_values = map(_nest_func, df[keys].values)
+    nested_values = list(map(_nest_func, df[keys].values))
     df[nested_column] = nested_values
 
     for key in keys:
@@ -528,6 +543,13 @@ def _nest_dataframe_dicts(unnested_df, nested_column, keys):
 
 def _ptrepack(src, dst, complevel, complib):
     """run ptrepack to repack from src to dst"""
+
+    #check_output(['ptrepack','--complevel=%s' % complevel, '--complib=%s' % complib, src, dst])
+    
+    #fix for for pytables not finding files on windows because of drive in path 
+    src = os.path.splitdrive(src)[-1]
+    dst = os.path.splitdrive(dst)[-1]
+
     with _sysargs_hacks():
         sys.argv = ['', '--complevel=%s' % complevel, '--complib=%s' % complib, src, dst]
         with _filter_warnings():
@@ -579,7 +601,7 @@ def _unnest_dataframe_dicts(df, nested_column, keys):
             return [np.nan] * len(keys)
         return [nested_dict.get(key, np.nan) for key in keys]
 
-    unzipped_values = zip(*df[nested_column].map(_unnest_func).values)
+    unzipped_values = list(zip(*df[nested_column].map(_unnest_func).values))
 
     for key, values in zip(keys, unzipped_values):
         df[key] = values
@@ -600,12 +622,12 @@ def _values_dicts_to_df(values_dicts):
 
 def _values_df_to_dicts(values_df):
     df = values_df.where(pandas.notnull(values_df), None)
-    dicts = df.T.to_dict().values()
+    dicts = list(df.T.to_dict().values())
     dicts.sort(key=lambda d: d['datetime'])
     return dicts
 
 
-def _variable_group_to_dict(store, variable_group):
+def _variable_group_to_dict(store, variable_group, start=None):
     _v_attrs = variable_group._v_attrs
     variable_dict = dict([
         (key, getattr(_v_attrs, key))
@@ -613,6 +635,8 @@ def _variable_group_to_dict(store, variable_group):
     ])
     values_path = variable_group._v_pathname + '/values'
     values_df = store[values_path]
+    if start:
+        values_df = values_df[values_df.index > start]
     variable_dict['values'] = _values_df_to_dicts(values_df)
 
     return variable_dict

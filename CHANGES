@@ -1,6 +1,46 @@
 Changelog
 ---------
 
+**0.8.4 (release 2017-02-06)**
+
+- added stevens dual well parser for eddn service
+- bugfixes for twc-kbdi service
+- optimize dict to dataframe conversion. This speeds up ncdc-ghcn by 10x
+
+**0.8.3.2 (released 2016-08-12)**
+
+- Fixed USGS NED services. Server changed spatial query format.
+
+**0.8.3.1 (release 2016-07-18)**
+
+- corrected install documentation
+
+**0.8.3 (released 2016-07-18)**
+
+- added Nasa Daymet weather data module, thanks to ColinTalbert
+- multiple bug fixes
+- improvements to installation and continuous integration testing
+
+**0.8.2 (released 2016-02-02)**
+
+- added modules for getting LCRA hydromet and water quality data
+- fixed waterml parser bug that was affecting USGS NWIS data when
+  parameter data collected using multiple methods exist (e.g. water level
+  measured with RADAR and pressure transducer) through use of optional 'method'
+  kwarg
+- fixed ncdc.ghcn.get_stations() failing tests with pandas==0.17.0
+
+**0.8.1 (released 2015-09-16)**
+
+- packaging fixes. 0.8.0 does not install correctly from pypi.
+
+**0.8.0 (released 2015-09-15)**
+
+- python 3 compatibility. ulmo is now compatible py python 2.7 and python 3.4.
+- ulmo is now being tested on Windows/Linux/MacOSX using AppVeyor and Travis CI.
+- the ioos conda channel is now the supported way to get ulmo.
+- added conda environment yaml files to make it easier to set up a development environment.
+
 **0.7.8 (released 2015-07-02)**
 
 - no changes, had to bump version number because of a corrupt file uploaded to pypi.
@@ -176,12 +216,10 @@ Changelog
 - moved module for WaterOneFlow from ulmo.wof -> ulmo.cuahsi.wof
 
 
-
 **0.2.4 (released 2013-01-14)**
 
 - core API functions can be called from main dataset modules
 - support python 2.6
-
 
 
 **0.2.3 (released 2013-01-13)**
@@ -194,18 +232,15 @@ Changelog
   disabled if pytables can't be found
 
 
-
 **0.2.2 (released 2012-11-05)**
 
 - bugfix: broken usgs.pytables last_refresh handling
-
 
 
 **0.2.1 (released 2012-11-04)**
 
 - turn on compression for pytables cache files
 - minor bugfix and test cleanup
-
 
 
 **0.2.0 (released 2012-10-12)**

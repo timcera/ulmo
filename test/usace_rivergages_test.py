@@ -9,7 +9,7 @@ def test_get_stations():
     stations_file = 'usace/rivergages/get_stations.cfm'
     with test_util.mocked_urls(stations_file):
         stations = ulmo.usace.rivergages.get_stations()
-    assert 1900 <= len(stations) <= 2000
+    assert len(stations) > 1900
     assert 'CE7F42E6' in stations
 
 
@@ -44,4 +44,4 @@ def test_get_station_data():
                     start='2013-1-1', end='2013-1-15')
 
         for test_value in test_values:
-            assert test_value in station_data.iteritems()
+            assert test_value in iter(station_data.items())

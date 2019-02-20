@@ -8,6 +8,10 @@
     .. _Climate Prediction Center: http://www.cpc.ncep.noaa.gov/
     .. _Weekly Drought Index: http://www.cpc.ncep.noaa.gov/products/analysis_monitoring/cdus/palmer_drought/
 """
+from __future__ import division
+from builtins import str
+from builtins import range
+from past.utils import old_div
 
 import datetime
 import os
@@ -74,7 +78,6 @@ STATE_CODES = {
     'WY': 48,
 }
 
-
 def get_data(state=None, climate_division=None, start=None, end=None,
              as_dataframe=False):
     """Retreives data.
@@ -130,10 +133,10 @@ def get_data(state=None, climate_division=None, start=None, end=None,
 
     data = None
     for year in range(start_year, end_year + 1):
-        url = _get_data_url(year)
+        url, current_year_flag = _get_data_url(year)
         format_type = _get_data_format(year)
         with _open_data_file(url) as data_file:
-            year_data = _parse_data_file(data_file, format_type, year)
+            year_data = _parse_data_file(data_file, format_type, year, current_year_flag)
 
         if state_code:
             year_data = year_data[year_data['state_code'] == state_code]
@@ -147,9 +150,9 @@ def get_data(state=None, climate_division=None, start=None, end=None,
         else:
             # some data are duplicated (e.g. final data from 2011 stretches into
             # prelim data of 2012), so just take those that are new
-            append_index = year_data.index - data.index
+            append_index = year_data.index.difference(data.index)
             if len(append_index):
-                data = data.append(year_data.ix[append_index])
+                data = data.append(year_data.loc[append_index])
 
     # restrict results to date range
     period_index = pandas.PeriodIndex(data['period'])
@@ -185,8 +188,8 @@ def _as_data_dict(dataframe):
 def _convert_state_codes(dataframe):
     """adds state abbreviations to a dataframe, based on state codes"""
     state_codes = pandas.DataFrame(
-        np.array([i for i in STATE_CODES.iteritems()],
-                 dtype=np.dtype([('state', '|S2'), ('code', int)])))
+        np.array([i for i in STATE_CODES.items()],
+                 dtype=np.dtype([('state', '|U2'), ('code', int)])))
     merged = pandas.merge(dataframe, state_codes,
             left_on='state_code', right_on='code', how='left')
     column_names = dataframe.columns.tolist()
@@ -234,18 +237,20 @@ def _get_data_format(year):
 def _get_data_url(year):
     current_year, current_week = _week_number(datetime.date.today())
     if year == current_year:
-        return 'http://ftp.cpc.ncep.noaa.gov/htdocs/temp4/current.data'
+        return ('http://ftp.cpc.ncep.noaa.gov/htdocs/temp4/current.data', True)
     elif year == current_year - 1:
-        url = 'http://ftp.cpc.ncep.noaa.gov/htdocs/temp2/palmer%s-PRELIM' % str(year)[-2:]
-        if not _url_exists(url):
-            url = 'http://ftp.cpc.ncep.noaa.gov/htdocs/temp4/current.data'
+        url = ('http://ftp.cpc.ncep.noaa.gov/htdocs/temp2/palmer%s-PRELIM' % str(year)[-2:],
+                False)
+        if not _url_exists(url[0]):
+            url = ('http://ftp.cpc.ncep.noaa.gov/htdocs/temp4/current.data', True)
         return url
     elif year <= 1985:
-        return 'http://ftp.cpc.ncep.noaa.gov/htdocs/temp2/palmer73-85'
+        return ('http://ftp.cpc.ncep.noaa.gov/htdocs/temp2/palmer73-85', False)
     else:
-        url = 'http://ftp.cpc.ncep.noaa.gov/htdocs/temp2/palmer%s' % str(year)[-2:]
-        if not _url_exists(url):
-            url = 'http://ftp.cpc.ncep.noaa.gov/htdocs/temp2/palmer%s-PRELIM' % str(year)[-2:]
+        url = ('http://ftp.cpc.ncep.noaa.gov/htdocs/temp2/palmer%s' % str(year)[-2:], False)
+        if not _url_exists(url[0]):
+            url = ('http://ftp.cpc.ncep.noaa.gov/htdocs/temp2/palmer%s-PRELIM' % str(year)[-2:],
+                    False)
         return url
 
 
@@ -253,10 +258,10 @@ def _open_data_file(url):
     """returns an open file handle for a data file; downloading if necessary or otherwise using a previously downloaded file"""
     file_name = url.rsplit('/', 1)[-1]
     file_path = os.path.join(CPC_DROUGHT_DIR, file_name)
-    return util.open_file_for_url(url, file_path, check_modified=True)
+    return util.open_file_for_url(url, file_path, check_modified=True, use_bytes=True)
 
 
-def _parse_data_file(data_file, palmer_format, year):
+def _parse_data_file(data_file, palmer_format, year, current_year_flag):
     """
     based on the fortran format strings:
         format2: FORMAT(I4,3I2,F4.1,F4.0,10F6.2,4F6.4,F6.3,10F6.2,F4.0,12F6.2)
@@ -290,8 +295,10 @@ def _parse_data_file(data_file, palmer_format, year):
         ('cmi', 'f8')
     ]
 
+    decodef = lambda x: x.decode("utf-8")
     data_array = np.genfromtxt(data_file, dtype=dtype, delimiter=delim_sequence, usecols=use_columns)
-    data_array['year'] = year
+    if not current_year_flag:
+        data_array['year'] = year
     dataframe = pandas.DataFrame(data_array)
     return dataframe
 
@@ -331,4 +338,4 @@ def _week_number(date):
     if date_ts < first_sunday_ts:
         first_sunday_ts = pandas.Timestamp(_first_sunday(date.year - 1))
     days_since_first_sunday = (date_ts - first_sunday_ts).days
-    return (first_sunday_ts.year, (days_since_first_sunday / 7) + 1)
+    return (first_sunday_ts.year, (old_div(days_since_first_sunday, 7)) + 1)
